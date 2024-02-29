@@ -18,6 +18,7 @@ static P_GPIOTE: LockMut<Gpiote> = LockMut::new();
 #[interrupt]
 fn GPIOTE() {
     P_GPIOTE.with_lock(|gpiote| gpiote.channel0().reset_events());
+    PANIC_LED.with_lock(|panic_led| panic_led.set_low().unwrap());
 }
 
 static PANIC_LED: LockMut<Pin<Output<PushPull>>> = LockMut::new();
@@ -34,7 +35,9 @@ fn main() -> ! {
     let interrupt_pin = board.pins.p0_25.into_pullup_input();
     let mut delay = Delay::new(board.SYST);
     
-    let _row1 = board.display_pins.row1.into_push_pull_output(Level::High);
+    let mut row1 = board.display_pins.row1.into_push_pull_output(Level::High);
+    let mut row5 = board.display_pins.row5.into_push_pull_output(Level::Low);
+
     let _on_led = board.display_pins.col1.into_push_pull_output(Level::Low);
     let mut read_led = board.display_pins.col2.into_push_pull_output(Level::High);
     let mut busy_led = board.display_pins.col3.into_push_pull_output(Level::High);
@@ -83,6 +86,11 @@ fn main() -> ! {
         }
     }
     ready_led.set_low().unwrap();
+    delay.delay_us(1000u16);
+    read_led.set_high().unwrap();
+    busy_led.set_high().unwrap();
+    row1.set_low().unwrap();
+    row5.set_high().unwrap();
 
     let mut lsm303 = Lsm303agr::new_with_i2c(i2c);
     lsm303.init().unwrap();
