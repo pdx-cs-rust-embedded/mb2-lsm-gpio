@@ -81,12 +81,19 @@ fn main() -> ! {
         match buf {
             [0x20, 0x39, ..] => {
                 busy_led.set_low().unwrap();
+                delay.delay_ms(100u16);
+                if interrupt_pin.is_high().unwrap() {
+                    break;
+                }
             }
             [0x11, 0x09, 0x1, cause, ..] => {
                 if !(1..=3).contains(&cause) {
                     panic!();
                 }
-                break;
+                delay.delay_ms(100u16);
+                if interrupt_pin.is_high().unwrap() {
+                    break;
+                }
             }
             _ => panic!(),
         }
