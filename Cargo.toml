@@ -7,14 +7,10 @@ edition = "2021"
 cortex-m-rt = "0.7"
 lsm303agr = "0.3"
 microbit-v2 = "0.13.0"
-rtt-target = "0.4"
+panic-halt = "0.2.0"
 
 [dependencies.critical-section-lock-mut]
 git = "http://github.com/pdx-cs-rust-embedded/critical-section-lock-mut"
-
-[dependencies.panic-rtt-target]
-version = "0.1"
-features = ["cortex-m"]
 
 # This works around old versions in the `microbit-v2`
 # crate. You don't have to use this crate, just linking

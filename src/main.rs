@@ -1,13 +1,10 @@
 #![no_main]
 #![no_std]
 
-use panic_rtt_target as _;
-use rtt_target::{rtt_init_print, rprintln};
-
 use cortex_m_rt::entry;
 use microbit::{
     board::Board,
-    hal::{Timer, twim, gpiote::Gpiote, delay::Delay, prelude::*},
+    hal::{Timer, Delay, twim, gpiote::Gpiote, gpio::{Level, Pin, Output, PushPull}, prelude::*},
     pac::{self, twim0::frequency::FREQUENCY_A, interrupt},
 };
 use cortex_m::asm;
@@ -20,13 +17,13 @@ static P_GPIOTE: LockMut<Gpiote> = LockMut::new();
 
 #[interrupt]
 fn GPIOTE() {
-    rprintln!("gpiote interrupt");
     P_GPIOTE.with_lock(|gpiote| gpiote.channel0().reset_events());
 }
 
+static PANIC_LED: LockMut<Pin<Output<PushPull>>> = LockMut::new();
+
 #[entry]
 fn main() -> ! {
-    rtt_init_print!();
     let board = Board::take().unwrap();
     let mut i2c = twim::Twim::new(
         board.TWIM0,
@@ -35,53 +32,57 @@ fn main() -> ! {
     );
     let mut timer = Timer::new(board.TIMER0);
     let interrupt_pin = board.pins.p0_25.into_pullup_input();
+    let mut delay = Delay::new(board.SYST);
     
+    let _row1 = board.display_pins.row1.into_push_pull_output(Level::High);
+    let _on_led = board.display_pins.col1.into_push_pull_output(Level::Low);
+    let mut read_led = board.display_pins.col2.into_push_pull_output(Level::High);
+    let mut busy_led = board.display_pins.col3.into_push_pull_output(Level::High);
+    let mut ready_led = board.display_pins.col4.into_push_pull_output(Level::High);
+    let panic_led = board.display_pins.col5.into_push_pull_output(Level::High);
+    PANIC_LED.init(panic_led.degrade());
+
     // On boot, the MB2 Interface MCU pulls the I2C_INT_INT
     // line low.  The line will remain pulled low until a
     // User Event message is read from the internal I2C bus.
     // This prevents any IMU interrupts from being seen.
-    // The line will continue low for up to a second after
+    // The line may continue low for a while after
     // reading the User Event message.
+    //
+    // XXX Right now, the IMCU may decide that it is "busy"
+    // and respond to reads with a Busy error response and
+    // not release the interrupt line. Analysis is in
+    // progress.
     //
     // Thanks to Robert Elia, Elliot Roberts et al for this
     // code.
-    rprintln!("clearing i2c_int_int");
-    // Endpoint 0x70 is the IMCU. The User Event message is
-    // 4 bytes. The Busy message is 2 bytes.
-    let mut delay = Delay::new(board.SYST);
-    delay.delay_ms(1000_u16);
     loop {
+        delay.delay_ms(100u16);
         if interrupt_pin.is_high().unwrap() {
             break;
         }
+        let buf = [0u8];
+        i2c.write(0x70, &buf).unwrap();
+        delay.delay_ms(100u16);
+        // Endpoint 0x70 is the IMCU. The User Event message is
+        // 4 bytes. The Busy message is 2 bytes.
         let mut buf = [0u8; 255];
+        read_led.set_low().unwrap();
         i2c.read(0x70, &mut buf).unwrap();
-        match &buf {
-            &[0x20, 0x39, 0x0, ..] => {
-                rprintln!("got 'busy' message");
-                delay.delay_ms(1000_u16);
+        match buf {
+            [0x20, 0x39, ..] => {
+                busy_led.set_low().unwrap();
             }
-            &[0x11, 0x09, 0x1, cause, ..] => {
+            [0x11, 0x09, 0x1, cause, ..] => {
                 if !(1..=3).contains(&cause) {
-                    panic!("unexpected 'user event' cause {}", cause);
+                    panic!();
                 }
-                rprintln!("got 'user event' message {}", cause);
                 break;
             }
-            _ => panic!("unexpected message {:x?}", buf),
+            _ => panic!(),
         }
     }
-    let mut msecs = 0;
-    while interrupt_pin.is_low().unwrap() {
-        if msecs >= 5000 {
-            panic!("interrupt pin stuck low for {} ms", msecs);
-        }
-        delay.delay_ms(1u16);
-        msecs += 1;
-    }
-    rprintln!("interrupt went high in {}ms", msecs);
-
-    rprintln!("continuing setup");
+    ready_led.set_low().unwrap();
 
     let mut lsm303 = Lsm303agr::new_with_i2c(i2c);
     lsm303.init().unwrap();
@@ -105,10 +106,18 @@ fn main() -> ! {
     unsafe { pac::NVIC::unmask(pac::Interrupt::GPIOTE) };
     pac::NVIC::unpend(pac::Interrupt::GPIOTE);
 
-    rprintln!("setup complete");
-
     lsm303.acc_enable_interrupt(Interrupt::DataReady1).unwrap();
 
+    loop {
+        asm::wfe();
+    }
+}
+
+#[panic_handler]
+fn panic_handler(_: &core::panic::PanicInfo<'_>) -> ! {
+    PANIC_LED.with_lock(|panic_led| {
+        let _ = panic_led.set_high();
+    });
     loop {
         asm::wfe();
     }
