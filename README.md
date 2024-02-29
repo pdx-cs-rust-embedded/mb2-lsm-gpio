@@ -14,6 +14,16 @@ on the MB2. At program startup the IMCU needs to release the
 pin so that the IMU can interrupt with it. This turns out to
 be a bit buggy.
 
+## Current Behavior
+
+When first flashed, this code will be blocked continuously
+reading Busy errors from the IMCU.
+
+When powered off and on, it will complete and take an
+interrupt.
+
+When long-reset, it will complete but not take an interrupt.
+
 ## Acknowledgements
 
 Thanks to the students of PSU CS 410P/510 Rust Embedded
