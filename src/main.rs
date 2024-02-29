@@ -26,11 +26,17 @@ static PANIC_LED: LockMut<Pin<Output<PushPull>>> = LockMut::new();
 #[entry]
 fn main() -> ! {
     let board = Board::take().unwrap();
-    let mut i2c = twim::Twim::new(
+    let i2c = twim::Twim::new(
         board.TWIM0,
         board.i2c_internal.into(),
         FREQUENCY_A::K100,
     );
+
+    // Initialize the LSM to make sure its interrupts are disabled.
+    let mut lsm303 = Lsm303agr::new_with_i2c(i2c);
+    lsm303.init().unwrap();
+    let mut i2c = lsm303.destroy();
+
     let mut timer = Timer::new(board.TIMER0);
     let interrupt_pin = board.pins.p0_25.into_pullup_input();
     let mut delay = Delay::new(board.SYST);
