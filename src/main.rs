@@ -86,7 +86,7 @@ fn main() -> ! {
         }
     }
     ready_led.set_low().unwrap();
-    delay.delay_us(1000u16);
+    delay.delay_ms(1000u16);
     read_led.set_high().unwrap();
     busy_led.set_high().unwrap();
     row1.set_low().unwrap();
